@@ -8,7 +8,7 @@ def organize_current_folder():
     """
     Организует файлы из папок в текущей директории по годам и месяцам.
     Программа работает в той папке, где находится exe-файл.
-    Формат исходных папок: ГГГГММ__ (например, 201706__ - июнь 2017)
+    Формат исходных папок: ГГГГММ* (например, 202402__, 202309_c, 201706__Проект)
     Файлы переносятся в папки: Год/МесяцГод/
     """
     
@@ -40,7 +40,7 @@ def organize_current_folder():
     print("ПРОГРАММА ДЛЯ ОРГАНИЗАЦИИ ФАЙЛОВ ПО ГОДАМ И МЕСЯЦАМ")
     print("=" * 80)
     print(f"Рабочая папка: {current_dir}")
-    print("\nФормат обрабатываемых папок: ГГГГММ__ (например, 201706__)")
+    print("\nФормат обрабатываемых папок: ГГГГММ* (например, 202402__, 202309_c, 201706__Проект)")
     print("Файлы будут перемещены в: Год/МесяцГод/")
     print("-" * 80)
     
@@ -73,20 +73,22 @@ def organize_current_folder():
             if any(month in folder_name for month in months_names.values()) and any(char.isdigit() for char in folder_name):
                 continue
             
-            # Ищем год и месяц в имени папки
-            match = re.match(r'^(\d{4})(\d{2})__', folder_name)
+            # Ищем год и месяц в имени папки - теперь поддерживает разные форматы
+            # Ищем первые 6 цифр в имени папки (ГГГГММ)
+            match = re.search(r'(\d{4})(\d{2})', folder_name)
             
             if match:
                 year = match.group(1)
                 month_num = match.group(2)
                 
-                # Получаем название месяца
-                month_name = months_names.get(month_num)
-                
-                if not month_name:
+                # Проверяем, что месяц от 01 до 12
+                if month_num not in months_names:
                     print(f"  [!] Неверный номер месяца ({month_num}) в папке: {folder_name}")
                     skipped_folders += 1
                     continue
+                
+                # Получаем название месяца
+                month_name = months_names.get(month_num)
                 
                 # Создаем пути
                 year_folder_name = f"{year} год"
@@ -125,14 +127,36 @@ def organize_current_folder():
                     # Перемещаем каждый файл
                     files_moved = 0
                     for file_path in files:
-                        target_path = month_folder_path / file_path.name
+                        # Создаем имя файла с префиксом из исходной папки для уникальности
+                        base_name = file_path.stem
+                        extension = file_path.suffix
                         
-                        # Если файл с таким именем уже существует, добавляем префикс
-                        if target_path.exists():
-                            base_name = file_path.stem
-                            extension = file_path.suffix
-                            new_name = f"{base_name}_{folder_name}{extension}"
+                        # Извлекаем суффикс из имени папки (часть после 6 цифр)
+                        # Находим позицию после 6 цифр
+                        match_pos = re.search(r'\d{6}', folder_name)
+                        if match_pos:
+                            suffix_start = match_pos.end()
+                            folder_suffix = folder_name[suffix_start:].lstrip('_').strip()
+                        else:
+                            folder_suffix = ""
+                        
+                        # Формируем новое имя файла
+                        if folder_suffix:
+                            new_name = f"{base_name}_{folder_suffix}{extension}"
+                        else:
+                            new_name = file_path.name
+                        
+                        target_path = month_folder_path / new_name
+                        
+                        # Если файл с таким именем уже существует, добавляем номер
+                        counter = 1
+                        while target_path.exists():
+                            if folder_suffix:
+                                new_name = f"{base_name}_{folder_suffix}_{counter}{extension}"
+                            else:
+                                new_name = f"{base_name}_{counter}{extension}"
                             target_path = month_folder_path / new_name
+                            counter += 1
                         
                         try:
                             shutil.move(str(file_path), str(target_path))
@@ -166,7 +190,7 @@ def organize_current_folder():
             else:
                 # Пропускаем папки не подходящего формата
                 if not any(skip in folder_name for skip in [' год', 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']):
-                    print(f"  [-] Пропущена (не подходит): {folder_name}")
+                    print(f"  [-] Пропущена (нет даты): {folder_name}")
                     skipped_folders += 1
     
     # Выводим итоги
@@ -196,14 +220,13 @@ def organize_current_folder():
             print(f"\n📁 {year_folder.name}/")
             for month_folder in sorted(year_folder.iterdir()):
                 if month_folder.is_dir():
-                    files_count = len([f for f in month_folder.iterdir() if f.is_file()])
+                    files = [f for f in month_folder.iterdir() if f.is_file()]
+                    files_count = len(files)
                     print(f"  📁 {month_folder.name}/ ({files_count} файлов)")
                     # Показываем первые 3 файла в каждой папке месяца
                     count = 0
-                    for file in sorted(month_folder.iterdir()):
-                        if file.is_file() and count < 3:
-                            print(f"    📄 {file.name}")
-                            count += 1
+                    for file in sorted(files)[:3]:
+                        print(f"    📄 {file.name}")
                     if files_count > 3:
                         print(f"    ... и еще {files_count - 3} файлов")
     
